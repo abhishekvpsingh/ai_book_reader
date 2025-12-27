@@ -9,14 +9,17 @@ from app.services.llm_providers import get_provider
 logger = logging.getLogger(__name__)
 
 SUMMARY_TEMPLATE = """You are an assistant summarizing a book section strictly from the provided text. Do not invent details.
-Use this exact template with headings:
-# Overview
-# Key Concepts
-# Important Formulas / Code
-# Diagrams / Visual Explanation
-# Practical Notes
-# Key Takeaways
-# Figures
+Write in a friendly, conversational tone as if explaining to a student with very basic knowledge.
+Avoid phrases like \"this chapter\". Instead use the section title or say \"this topic\".
+Use short sentences suitable for TTS.
+Use this exact template with headings (no markdown symbols, just plain text headings):
+Overview
+Key Concepts
+Important Formulas / Code
+Diagrams / Visual Explanation
+Practical Notes
+Key Takeaways
+Figures
 """
 
 

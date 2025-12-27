@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     piper_bin: str | None = None
     piper_model: str | None = None
     tts_allow_network: bool = True
+    tts_lang: str = "en-in"
 
     log_level: str = "INFO"
 

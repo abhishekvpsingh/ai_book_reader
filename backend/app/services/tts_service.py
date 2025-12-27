@@ -35,7 +35,7 @@ def _generate_with_piper(text: str, output_path: str) -> None:
 def _generate_with_gtts(text: str, output_path: str) -> None:
     if not settings.tts_allow_network:
         raise RuntimeError("gTTS requires network access; set TTS_ALLOW_NETWORK=true")
-    tts = gTTS(text=text)
+    tts = gTTS(text=text, lang=settings.tts_lang)
     tts.save(output_path)
 
 
