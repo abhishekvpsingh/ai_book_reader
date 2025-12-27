@@ -1,0 +1,11 @@
+services:
+  backend:
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://ai_book_reader:ai_book_reader@postgres:5432/ai_book_reader
+    depends_on:
+      - postgres
+  worker:
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://ai_book_reader:ai_book_reader@postgres:5432/ai_book_reader
+    depends_on:
+      - postgres

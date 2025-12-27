@@ -1,0 +1,58 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  backend:
+    build: ./backend
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  worker:
+    build: ./backend
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+    command: ["python", "/app/app/workers/worker.py"]
+    depends_on:
+      - redis
+      - backend
+
+  frontend:
+    build: ./frontend
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - PUBLIC_BACKEND_URL=http://localhost:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["prod"]
+    environment:
+      POSTGRES_DB: ai_book_reader
+      POSTGRES_USER: ai_book_reader
+      POSTGRES_PASSWORD: ai_book_reader
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+
+volumes:
+  pg_data:
