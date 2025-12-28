@@ -22,7 +22,7 @@ st.markdown(
         --text: #f2f4f8;
         --muted: #98a2b3;
     }
-    .block-container { padding-top: 2.2rem; padding-bottom: 2rem; }
+    .block-container { padding-top: 1.2rem; padding-bottom: 1rem; }
     [data-testid="stSidebar"] { width: 320px; }
     [data-testid="stSidebar"] > div { height: 100vh; overflow-y: auto; padding-top: 0.75rem; }
     [data-testid="stTabs"] { position: relative; z-index: 2; margin-top: 0.6rem; }
@@ -48,7 +48,7 @@ st.markdown(
     .summary-meta { color: var(--muted); font-size: 0.9rem; }
     .pdf-frame {
         width: 100%;
-        height: 80vh;
+        height: calc(100vh - 220px);
         border: 1px solid var(--border);
         border-radius: 10px;
         background: #fff;
@@ -79,6 +79,12 @@ st.markdown(
         border-radius: 8px;
         padding: 6px 10px;
         cursor: pointer;
+    }
+    @media (max-width: 900px) {
+        [data-testid="stSidebar"] { width: 100%; position: relative; }
+        [data-testid="stHorizontalBlock"] { flex-direction: column; }
+        .pdf-frame { height: calc(100vh - 260px); }
+        [data-testid="stDialog"] > div { width: 92vw; }
     }
     </style>
     """,
@@ -144,6 +150,14 @@ def render_audio_player(audio_bytes: bytes, content_type: str) -> None:
     </div>
     """
     components_html(html, height=80)
+
+
+def render_pdf_viewer(book_id: int, page: int) -> None:
+    viewer_url = f"{PUBLIC_BACKEND_URL}/books/{book_id}/viewer?page={page}"
+    st.markdown(
+        f"<iframe src='{viewer_url}' class='pdf-frame' style='width:100%;min-width:100%;'></iframe>",
+        unsafe_allow_html=True,
+    )
 
 
 def poll_job(job_id, timeout=60):
@@ -348,13 +362,9 @@ if selected_label != "None":
 
         with right:
             st.subheader("PDF Viewer")
-            page = st.number_input("Page", min_value=1, step=1, key="page")
+            page = st.session_state.get("page", 1)
             api_put(f"/books/{book['id']}/progress", json={"last_page": int(page), "last_section_id": None})
-            pdf_url = f"{PUBLIC_BACKEND_URL}/books/{book['id']}/pdf#page={page}"
-            st.markdown(
-                f"<iframe src='{pdf_url}' class='pdf-frame'></iframe>",
-                unsafe_allow_html=True,
-            )
+            render_pdf_viewer(int(book["id"]), int(page))
 
         if st.session_state.get("show_summary") and st.session_state.get("selected_section"):
             summary_dialog(st.session_state["selected_section"], recursive)
