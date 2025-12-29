@@ -99,6 +99,10 @@ def get_book_viewer(book_id: int, request: Request, page: int = 1, db: Session =
         #toolbar {{ display:flex; align-items:center; gap:8px; padding:8px 12px; background:#161a1f; border-bottom:1px solid #2a323d; position:sticky; top:0; z-index:2; }}
         #toolbar button {{ background:#202531; color:#e5e7eb; border:1px solid #2a323d; padding:4px 8px; border-radius:6px; cursor:pointer; }}
         #pdf-canvas {{ display:block; margin:16px auto; background:#fff; box-shadow:0 0 0 1px #2a323d; }}
+        @media (max-width: 1024px) {{
+          #sidebar {{ display:none; width:0; padding:0; border:none; }}
+          #viewer {{ width:100%; }}
+        }}
       </style>
     </head>
     <body>
