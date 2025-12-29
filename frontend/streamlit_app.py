@@ -1,7 +1,9 @@
 import os
 import time
+import base64
 import requests
 import streamlit as st
+from streamlit.components.v1 import html as components_html
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 PUBLIC_BACKEND_URL = os.getenv("PUBLIC_BACKEND_URL", "http://localhost:8000")
@@ -11,16 +13,78 @@ st.set_page_config(page_title="AI Book Reader", layout="wide")
 st.markdown(
     """
     <style>
+    :root {
+        --surface: #111316;
+        --panel: #161a1f;
+        --panel-2: #1b2027;
+        --border: #2a323d;
+        --accent: #18a0fb;
+        --text: #f2f4f8;
+        --muted: #98a2b3;
+    }
+    .block-container { padding-top: 1.2rem; padding-bottom: 1rem; }
+    [data-testid="stSidebar"] { width: 320px; }
+    [data-testid="stSidebar"] > div { height: 100vh; overflow-y: auto; padding-top: 0.75rem; }
+    [data-testid="stTabs"] { position: relative; z-index: 2; margin-top: 0.6rem; }
+    [data-testid="stTabs"] button { font-size: 1.02rem; padding: 0.45rem 1rem; }
+    [data-testid="stDialog"] > div { width: 78vw; max-width: 1100px; }
     .summary-box {
-        border: 1px solid #ddd;
-        padding: 12px;
-        border-radius: 8px;
+        border: 1px solid var(--border);
+        padding: 14px;
+        border-radius: 10px;
         max-height: 420px;
         overflow-y: auto;
-        background: #fafafa;
+        background: var(--panel-2);
+        color: var(--text);
     }
-    .section-title {
-        font-weight: 600;
+    .section-title { font-weight: 600; }
+    .summary-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 0.5rem;
+    }
+    .summary-meta { color: var(--muted); font-size: 0.9rem; }
+    .pdf-frame {
+        width: 100%;
+        height: calc(100vh - 220px);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+    }
+    .stTextArea textarea {
+        background: var(--panel-2);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+    }
+    .stButton button {
+        border-radius: 8px;
+        border: 1px solid var(--border);
+    }
+    .audio-shell {
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel-2);
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .audio-shell button {
+        background: var(--panel);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 6px 10px;
+        cursor: pointer;
+    }
+    @media (max-width: 900px) {
+        [data-testid="stSidebar"] { width: 100%; position: relative; }
+        [data-testid="stHorizontalBlock"] { flex-direction: column; }
+        .pdf-frame { height: calc(100vh - 260px); }
+        [data-testid="stDialog"] > div { width: 92vw; }
     }
     </style>
     """,
@@ -67,6 +131,35 @@ def fetch_audio(version_id: int):
         return None, None
 
 
+def render_audio_player(audio_bytes: bytes, content_type: str) -> None:
+    b64 = base64.b64encode(audio_bytes).decode("ascii")
+    html = f"""
+    <div class="audio-shell">
+      <button onclick="var a=document.getElementById('tts-audio'); a.currentTime=Math.max(0,a.currentTime-10);">-10s</button>
+      <button onclick="var a=document.getElementById('tts-audio'); a.currentTime=Math.min(a.duration,a.currentTime+10);">+10s</button>
+      <label style="color:#98a2b3;">Speed</label>
+      <select onchange="document.getElementById('tts-audio').playbackRate=parseFloat(this.value);" style="background:#161a1f;color:#f2f4f8;border:1px solid #2a323d;border-radius:6px;padding:4px 6px;">
+        <option value="0.9">0.9x</option>
+        <option value="1" selected>1.0x</option>
+        <option value="1.1">1.1x</option>
+        <option value="1.25">1.25x</option>
+      </select>
+      <audio id="tts-audio" controls style="width:100%;">
+        <source src="data:{content_type};base64,{b64}">
+      </audio>
+    </div>
+    """
+    components_html(html, height=80)
+
+
+def render_pdf_viewer(book_id: int, page: int) -> None:
+    viewer_url = f"{PUBLIC_BACKEND_URL}/books/{book_id}/viewer?page={page}"
+    st.markdown(
+        f"<iframe src='{viewer_url}' class='pdf-frame' style='width:100%;min-width:100%;'></iframe>",
+        unsafe_allow_html=True,
+    )
+
+
 def poll_job(job_id, timeout=60):
     start = time.time()
     while time.time() - start < timeout:
@@ -108,7 +201,10 @@ def summary_dialog(section, recursive):
     state_key = f"selected_version_{section['id']}"
 
     def render_dialog_body():
-        st.write(f"Pages {section['page_start']} - {section['page_end']}")
+        st.markdown(
+            f"<div class='summary-header'><div><strong>Summary</strong><div class='summary-meta'>Pages {section['page_start']} - {section['page_end']}</div></div></div>",
+            unsafe_allow_html=True,
+        )
         versions_response = api_get(f"/sections/{section['id']}/summary_versions")
         if not versions_response:
             st.error("Backend unavailable.")
@@ -126,7 +222,7 @@ def summary_dialog(section, recursive):
             selected_version_id = version_ids[labels.index(selected_label)]
             st.session_state[state_key] = selected_version_id
 
-        cols = st.columns(3)
+        cols = st.columns([1, 1, 1])
         if cols[0].button("Regenerate"):
             res = api_post(
                 f"/sections/{section['id']}/summaries:generate",
@@ -169,7 +265,7 @@ def summary_dialog(section, recursive):
             if not audio_bytes:
                 st.error("Audio not available. Check TTS settings.")
                 return
-            st.audio(audio_bytes, format=content_type)
+            render_audio_player(audio_bytes, content_type)
 
         content = None
         if st.session_state.get("overview_only"):
@@ -185,20 +281,23 @@ def summary_dialog(section, recursive):
                 version = version_response.json()
                 content = version.get("content")
 
-        if content:
-            st.text_area("Summary", content, height=320, disabled=True)
-        else:
-            st.info("No summary available yet. Click Regenerate to create one.")
-
-        assets_response = api_get(
-            f"/sections/{section['id']}/assets", params={"recursive": str(recursive).lower()}
-        )
-        assets = assets_response.json() if assets_response else []
-        if assets:
-            st.subheader("Figures")
-            for asset in assets:
-                image_url = f"{PUBLIC_BACKEND_URL}/assets/{asset['id']}"
-                st.image(image_url, caption=asset.get("caption"))
+        tabs = st.tabs(["Summary", "Figures"])
+        with tabs[0]:
+            if content:
+                st.text_area("Summary", content, height=460, disabled=True)
+            else:
+                st.info("No summary available yet. Click Regenerate to create one.")
+        with tabs[1]:
+            assets_response = api_get(
+                f"/sections/{section['id']}/assets", params={"recursive": str(recursive).lower()}
+            )
+            assets = assets_response.json() if assets_response else []
+            if assets:
+                for asset in assets:
+                    image_url = f"{PUBLIC_BACKEND_URL}/assets/{asset['id']}"
+                    st.image(image_url, caption=asset.get("caption"))
+            else:
+                st.caption("No figures for this section.")
 
     if hasattr(st, "dialog"):
         with st.dialog(f"Summary: {section['title']}"):
@@ -236,6 +335,8 @@ books = st.session_state["books_cache"]
 book_options = {f"{b['id']} - {b['title']}": b for b in books}
 selected_label = st.sidebar.selectbox("Select Book", ["None"] + list(book_options.keys()))
 
+tabs = st.tabs(["Reader", "Summaries Explorer"])
+
 if selected_label != "None":
     book = book_options[selected_label]
     progress = api_get(f"/books/{book['id']}/progress")
@@ -244,10 +345,8 @@ if selected_label != "None":
         st.session_state["current_book_id"] = book["id"]
         st.session_state["page"] = int(last_page)
 
-    tabs = st.tabs(["Reader", "Summaries Explorer"])
-
     with tabs[0]:
-        left, right = st.columns([1, 2])
+        left, right = st.columns([1, 4])
         with left:
             st.subheader("Sections")
             tree_response = api_get(f"/books/{book['id']}/sections")
@@ -263,13 +362,9 @@ if selected_label != "None":
 
         with right:
             st.subheader("PDF Viewer")
-            page = st.number_input("Page", min_value=1, step=1, key="page")
+            page = st.session_state.get("page", 1)
             api_put(f"/books/{book['id']}/progress", json={"last_page": int(page), "last_section_id": None})
-            pdf_url = f"{PUBLIC_BACKEND_URL}/books/{book['id']}/pdf#page={page}"
-            st.markdown(
-                f"<iframe src='{pdf_url}' width='100%' height='800px' style='border:0;'></iframe>",
-                unsafe_allow_html=True,
-            )
+            render_pdf_viewer(int(book["id"]), int(page))
 
         if st.session_state.get("show_summary") and st.session_state.get("selected_section"):
             summary_dialog(st.session_state["selected_section"], recursive)
@@ -290,4 +385,7 @@ if selected_label != "None":
             summary_dialog(st.session_state["selected_section"], True)
             st.session_state["show_summary"] = False
 else:
-    st.info("Upload a PDF and select a book to begin.")
+    with tabs[0]:
+        st.info("Upload a PDF and select a book to begin.")
+    with tabs[1]:
+        st.info("Upload a PDF and select a book to begin.")
