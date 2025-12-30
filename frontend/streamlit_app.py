@@ -352,13 +352,50 @@ if books_response and books_response.status_code == 200:
     st.session_state["books_cache"] = books_response.json()
 books = st.session_state["books_cache"]
 book_options = {f"{b['id']} - {b['title']}": b for b in books}
-selected_label = st.sidebar.selectbox("Select Book", ["None"] + list(book_options.keys()))
+selected_label = st.sidebar.selectbox(
+    "Select Book",
+    ["None"] + list(book_options.keys()),
+    key="selected_book_label",
+)
 st.sidebar.checkbox("Recursive summary", value=st.session_state.get("recursive_summary", True), key="recursive_summary")
 
 tabs = st.tabs(["Reader", "Summaries Explorer"])
 
 if selected_label != "None":
     book = book_options[selected_label]
+    if st.session_state.get("rename_book_id") != book["id"]:
+        st.session_state["rename_book_id"] = book["id"]
+        st.session_state["rename_title"] = book["title"]
+        st.session_state["confirm_delete_book"] = False
+
+    with st.sidebar.expander("Manage book"):
+        new_title = st.text_input("Rename book", key="rename_title")
+        if st.button("Save title"):
+            res = api_put(f"/books/{book['id']}", json={"title": new_title})
+            if res and res.status_code == 200:
+                st.success("Book renamed.")
+                st.session_state["books_cache"] = []
+                st.rerun()
+            else:
+                st.error("Rename failed.")
+
+        st.checkbox("Confirm delete", key="confirm_delete_book")
+        if st.button("Delete book"):
+            if not st.session_state.get("confirm_delete_book"):
+                st.warning("Confirm delete first.")
+            else:
+                res = api_delete(f"/books/{book['id']}")
+                if res and res.status_code == 200:
+                    st.success("Book deleted.")
+                    st.session_state["books_cache"] = []
+                    st.session_state["selected_book_label"] = "None"
+                    st.session_state["current_book_id"] = None
+                    st.session_state["selected_section"] = None
+                    st.session_state["show_summary"] = False
+                    st.session_state["page"] = 1
+                    st.rerun()
+                else:
+                    st.error("Delete failed.")
     st_autorefresh(interval=1000, key="summary_autorefresh", debounce=True)
     progress = api_get(f"/books/{book['id']}/progress")
     last_page = progress.json().get("last_page", 1) if progress and progress.status_code == 200 else 1

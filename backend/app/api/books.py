@@ -1,11 +1,14 @@
 import logging
+import os
+import shutil
 from datetime import datetime
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.db.session import get_db
-from app.models import Book, Section, ReadingProgress
-from app.schemas.book import BookOut
+from app.models import Book, Section, ReadingProgress, Note
+from app.schemas.book import BookOut, BookUpdate
 from app.schemas.section import SectionTree
 from app.schemas.progress import ProgressOut, ProgressUpdate
 from app.services.pdf_ingestion import save_pdf_file
@@ -49,6 +52,47 @@ def get_book(book_id: int, db: Session = Depends(get_db)):
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     return book
+
+
+@router.put("/books/{book_id}", response_model=BookOut)
+def update_book(book_id: int, payload: BookUpdate, db: Session = Depends(get_db)):
+    book = db.get(Book, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    book.title = title
+    db.commit()
+    db.refresh(book)
+    return book
+
+
+@router.delete("/books/{book_id}")
+def delete_book(book_id: int, db: Session = Depends(get_db)):
+    book = db.get(Book, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+    file_path = book.file_path
+    image_root = os.path.join(settings.image_dir, str(book_id))
+    audio_root = os.path.join(settings.audio_dir, str(book_id))
+    db.query(Note).filter(Note.book_id == book_id).delete(synchronize_session=False)
+    db.delete(book)
+    db.commit()
+    _summary_clicks.pop(book_id, None)
+    for path in [file_path]:
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            logger.warning("Failed to delete file", extra={"path": path, "book_id": book_id})
+    for folder in [image_root, audio_root]:
+        try:
+            if os.path.isdir(folder):
+                shutil.rmtree(folder)
+        except OSError:
+            logger.warning("Failed to delete folder", extra={"path": folder, "book_id": book_id})
+    return {"status": "deleted"}
 
 
 @router.get("/books/{book_id}/sections", response_model=list[SectionTree])
@@ -136,6 +180,10 @@ def get_book_viewer(book_id: int, request: Request, page: int = 1, db: Session =
             <span>Page</span>
             <input id="page-input" type="number" min="1" />
             <span id="page-count"></span>
+            <span style="margin-left:auto;"></span>
+            <button onclick="zoomOut()">-</button>
+            <span id="zoom-level">100%</span>
+            <button onclick="zoomIn()">+</button>
           </div>
           <div id="page-wrap">
             <canvas id="pdf-canvas"></canvas>
@@ -163,6 +211,7 @@ def get_book_viewer(book_id: int, request: Request, page: int = 1, db: Session =
         const bookId = {book_id};
         let pdfDoc = null;
         let pageNumber = {page};
+        let zoomScale = 0.9;
         let lastSelection = null;
         let currentAnswer = "";
         const canvas = document.getElementById('pdf-canvas');
@@ -265,7 +314,7 @@ def get_book_viewer(book_id: int, request: Request, page: int = 1, db: Session =
           pdfDoc.getPage(num).then(function(page) {{
             const viewerWidth = document.getElementById('viewer').clientWidth - 40;
             const viewport = page.getViewport({{ scale: 1 }});
-            const scale = viewerWidth / viewport.width;
+            const scale = (viewerWidth / viewport.width) * zoomScale;
             const scaledViewport = page.getViewport({{ scale: scale }});
             canvas.height = scaledViewport.height;
             canvas.width = scaledViewport.width;
@@ -281,8 +330,19 @@ def get_book_viewer(book_id: int, request: Request, page: int = 1, db: Session =
             }});
             pageInfo.textContent = "of " + pdfDoc.numPages;
             pageInput.value = num;
+            document.getElementById('zoom-level').textContent = Math.round(zoomScale * 100) + "%";
             clearSelectionUI();
           }});
+        }}
+
+        function zoomIn() {{
+          zoomScale = Math.min(1.6, Math.round((zoomScale + 0.1) * 10) / 10);
+          renderPage(pageNumber);
+        }}
+
+        function zoomOut() {{
+          zoomScale = Math.max(0.6, Math.round((zoomScale - 0.1) * 10) / 10);
+          renderPage(pageNumber);
         }}
 
         function nextPage() {{

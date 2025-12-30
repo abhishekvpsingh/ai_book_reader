@@ -1,20 +1,31 @@
 # AI Book Reader & Smart Summary System
 
-AI-powered book reader that ingests PDFs, extracts a structured section tree, and generates versioned summaries with figures and TTS. Runs as a Dockerized monorepo (FastAPI + Streamlit + RQ + Redis) on Mac and NAS.
+A production‑ready, self‑hosted book reader for PDF textbooks that preserves original layout, builds a structured section tree, and generates versioned summaries with figures and TTS. Runs as a Dockerized monorepo (FastAPI + Streamlit + RQ + Redis) on Mac and NAS.
+
+## Highlights
+- Embedded PDF.js viewer with outline navigation, page jump, and zoom controls.
+- Section tree from TOC or heading inference.
+- Click‑to‑summarize directly from the PDF viewer (outline or page text).
+- Versioned summaries with figures and audio playback (TTS).
+- “Ask about selection” Q&A with saved, page‑anchored notes and highlights.
+- Rename/Delete books from the sidebar (under “Manage book”).
 
 ## Workflow Overview
 1) Upload a PDF.
-2) Ingestion extracts text, TOC/heading-based sections, and embedded images.
-3) Sections appear in the tree; click a node to generate summaries (recursive supported).
-4) Summaries are versioned and shown in a modal with figures and TTS playback.
-5) PDF viewer preserves the original layout and supports outline navigation.
+2) Ingestion extracts text, sections (TOC/heading inference), and images.
+3) Read the book in the embedded PDF viewer.
+   - Click an outline item or a page heading to open a summary popup for that section.
+   - Select text, ask a question, and optionally save a note to highlight the text.
+4) Summaries are versioned and displayed with figures and TTS.
 
 ## Quick Start (Mac)
 1) Copy env template:
 ```bash
 cp .env.example .env
 ```
-2) (Optional) Set `LLM_PROVIDER=openai` and `OPENAI_API_KEY=...` in `.env`, or configure Ollama.
+2) (Optional) Configure LLM provider:
+- OpenAI: set `LLM_PROVIDER=openai` and `OPENAI_API_KEY=...`
+- Ollama: see setup below
 3) Start the stack:
 ```bash
 docker compose up --build
@@ -24,19 +35,27 @@ docker compose up --build
 - API docs: http://localhost:8000/docs
 
 ## PDF Viewer
-The app uses a local PDF.js viewer served by the backend:
+The app serves a local PDF.js viewer from the backend:
 ```
 GET /books/{id}/viewer?page=#
 ```
-This avoids mixed-content issues on NAS and works on both Mac and NAS. On phones, the outline sidebar is hidden so the page is readable.
+It works on both Mac and NAS and avoids mixed‑content issues. On phones, the outline sidebar is hidden for readability.
+
+## Ask About Selection (Q&A Notes)
+- Select text on a page → click “Ask about selection”.
+- Ask a question → save the answer as a note.
+- Saved notes appear as highlights on the same page; click a highlight to open the saved Q&A.
+
+## Book Management
+- Rename or delete books from the sidebar under **Manage book**.
+- Delete removes the book, notes, images, and audio from storage.
 
 ## Ollama Setup
-- Install Ollama and pull a model:
 ```bash
 ollama serve
 ollama pull llama3
 ```
-- Update `.env`:
+Update `.env`:
 ```
 LLM_PROVIDER=ollama
 OLLAMA_URL=http://host.docker.internal:11434
@@ -55,8 +74,8 @@ OPENAI_MODEL=gpt-4o-mini
 - SQLite (default): `DATABASE_URL=sqlite:////data/app.db`
 - PostgreSQL (optional):
   - Use `docker compose --profile prod up --build` to start `postgres`.
-  - Use `docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile prod up --build`.
-  - `.env` should include:
+  - Or: `docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile prod up --build`
+  - `.env`:
 ```
 DATABASE_URL=postgresql+psycopg2://ai_book_reader:ai_book_reader@postgres:5432/ai_book_reader
 ```
@@ -68,7 +87,7 @@ DATABASE_URL=postgresql+psycopg2://ai_book_reader:ai_book_reader@postgres:5432/a
 ```bash
 docker compose up --build -d
 ```
-4) For Tailscale access, expose port 8000 and set:
+4) For Tailscale access, set:
 ```
 PUBLIC_BACKEND_URL=http://<TAILSCALE_IP>:8000
 ```
@@ -80,14 +99,15 @@ python backend/scripts/smoke_check.py http://localhost:8000
 
 ## Sanity Checklist
 - Upload book: http://localhost:8501 (sidebar upload)
-- Open PDF viewer: select a book and confirm the embedded viewer renders
-- Jump to section: click a section and confirm page jumps to section start
-- Generate summary: click section, open modal, hit Regenerate
-- View images: confirm Figures show under summary
-- Regenerate/version: use Regenerate + Versions dropdown
-- Listen audio: click Listen and verify audio playback
-- Delete version: click Delete and confirm versions list updates
-- Summaries explorer: open tab and click nodes to open summary modal
+- Read PDF: viewer renders pages and outline in the Reader tab
+- Jump to section: outline click jumps to page
+- Generate summary: click outline item or page heading → popup opens
+- Versioning: use Regenerate and Versions dropdown
+- Figures: show under the Figures tab in the summary popup
+- Listen: generate and play audio
+- Ask about selection: select text → Ask → Save → click highlight to reopen
+- Summaries explorer: browse and open summaries by tree
+- Rename/Delete: sidebar → Manage book
 
 ## Data Layout
 - PDFs: `/data/pdfs`
