@@ -4,6 +4,7 @@ import base64
 import requests
 import streamlit as st
 from streamlit.components.v1 import html as components_html
+from streamlit_autorefresh import st_autorefresh
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 PUBLIC_BACKEND_URL = os.getenv("PUBLIC_BACKEND_URL", "http://localhost:8000")
@@ -153,11 +154,14 @@ def render_audio_player(audio_bytes: bytes, content_type: str) -> None:
 
 
 def render_pdf_viewer(book_id: int, page: int) -> None:
-    viewer_url = f"{PUBLIC_BACKEND_URL}/books/{book_id}/viewer?page={page}"
+    viewer_rev = "v2-qa-1"
+    viewer_url = f"{PUBLIC_BACKEND_URL}/books/{book_id}/viewer?page={page}&v={viewer_rev}"
     st.markdown(
         f"<iframe src='{viewer_url}' class='pdf-frame' style='width:100%;min-width:100%;'></iframe>",
         unsafe_allow_html=True,
     )
+
+
 
 
 def poll_job(job_id, timeout=60):
@@ -334,37 +338,45 @@ if books_response and books_response.status_code == 200:
 books = st.session_state["books_cache"]
 book_options = {f"{b['id']} - {b['title']}": b for b in books}
 selected_label = st.sidebar.selectbox("Select Book", ["None"] + list(book_options.keys()))
+st.sidebar.checkbox("Recursive summary", value=st.session_state.get("recursive_summary", True), key="recursive_summary")
 
 tabs = st.tabs(["Reader", "Summaries Explorer"])
 
 if selected_label != "None":
     book = book_options[selected_label]
+    if not st.session_state.get("show_summary"):
+        st_autorefresh(interval=1000, key="summary_autorefresh", debounce=True)
     progress = api_get(f"/books/{book['id']}/progress")
     last_page = progress.json().get("last_page", 1) if progress and progress.status_code == 200 else 1
     if st.session_state.get("current_book_id") != book["id"]:
         st.session_state["current_book_id"] = book["id"]
         st.session_state["page"] = int(last_page)
+        st.session_state["last_viewer_event_id"] = None
+
+    click_event = api_get(f"/books/{book['id']}/summary_click")
+    if click_event and click_event.status_code == 200:
+        click_data = click_event.json()
+        event_id = click_data.get("event_id")
+        event_page = click_data.get("page")
+        last_seen = st.session_state.get("last_viewer_event_id")
+        if event_id and (last_seen is None or int(event_id) != int(last_seen)):
+            st.session_state["last_viewer_event_id"] = event_id
+            page_for_section = int(event_page) if event_page else 1
+            section_resp = api_get(
+                f"/books/{book['id']}/sections/by_page", params={"page": page_for_section}
+            )
+            if section_resp and section_resp.status_code == 200:
+                st.session_state["page"] = page_for_section
+                st.session_state["selected_section"] = section_resp.json()
+                st.session_state["show_summary"] = True
 
     with tabs[0]:
-        left, right = st.columns([1, 4])
-        with left:
-            st.subheader("Sections")
-            tree_response = api_get(f"/books/{book['id']}/sections")
-            tree = tree_response.json() if tree_response else []
-            recursive = st.checkbox("Recursive summary", value=True)
+        st.subheader("PDF Viewer")
+        page = st.session_state.get("page", 1)
+        api_put(f"/books/{book['id']}/progress", json={"last_page": int(page), "last_section_id": None})
+        render_pdf_viewer(int(book["id"]), int(page))
 
-            def on_section_click(node):
-                st.session_state["selected_section"] = node
-                st.session_state["show_summary"] = True
-                st.session_state["page"] = int(node["page_start"])
-
-            render_tree(tree, on_section_click)
-
-        with right:
-            st.subheader("PDF Viewer")
-            page = st.session_state.get("page", 1)
-            api_put(f"/books/{book['id']}/progress", json={"last_page": int(page), "last_section_id": None})
-            render_pdf_viewer(int(book["id"]), int(page))
+        recursive = st.session_state.get("recursive_summary", True)
 
         if st.session_state.get("show_summary") and st.session_state.get("selected_section"):
             summary_dialog(st.session_state["selected_section"], recursive)
