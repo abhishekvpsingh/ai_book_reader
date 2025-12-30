@@ -29,6 +29,11 @@ st.markdown(
     [data-testid="stTabs"] { position: relative; z-index: 2; margin-top: 0.6rem; }
     [data-testid="stTabs"] button { font-size: 1.02rem; padding: 0.45rem 1rem; }
     [data-testid="stDialog"] > div { width: 78vw; max-width: 1100px; }
+    [data-testid="stDialog"] button[aria-label="Close"],
+    [data-testid="stDialog"] button[title="Close"],
+    [data-testid="stDialog"] [data-testid="dialogCloseButton"] {
+        display: none;
+    }
     .summary-box {
         border: 1px solid var(--border);
         padding: 14px;
@@ -209,6 +214,10 @@ def summary_dialog(section, recursive):
             f"<div class='summary-header'><div><strong>Summary</strong><div class='summary-meta'>Pages {section['page_start']} - {section['page_end']}</div></div></div>",
             unsafe_allow_html=True,
         )
+        if st.button("Close", key=f"close_summary_{section['id']}"):
+            st.session_state["show_summary"] = False
+            st.session_state["selected_section"] = None
+            st.rerun()
         versions_response = api_get(f"/sections/{section['id']}/summary_versions")
         if not versions_response:
             st.error("Backend unavailable.")
@@ -344,24 +353,19 @@ tabs = st.tabs(["Reader", "Summaries Explorer"])
 
 if selected_label != "None":
     book = book_options[selected_label]
-    if not st.session_state.get("show_summary"):
-        st_autorefresh(interval=1000, key="summary_autorefresh", debounce=True)
+    st_autorefresh(interval=1000, key="summary_autorefresh", debounce=True)
     progress = api_get(f"/books/{book['id']}/progress")
     last_page = progress.json().get("last_page", 1) if progress and progress.status_code == 200 else 1
     if st.session_state.get("current_book_id") != book["id"]:
         st.session_state["current_book_id"] = book["id"]
         st.session_state["page"] = int(last_page)
-        st.session_state["last_viewer_event_id"] = None
 
     click_event = api_get(f"/books/{book['id']}/summary_click")
     if click_event and click_event.status_code == 200:
         click_data = click_event.json()
-        event_id = click_data.get("event_id")
         event_page = click_data.get("page")
-        last_seen = st.session_state.get("last_viewer_event_id")
-        if event_id and (last_seen is None or int(event_id) != int(last_seen)):
-            st.session_state["last_viewer_event_id"] = event_id
-            page_for_section = int(event_page) if event_page else 1
+        if event_page:
+            page_for_section = int(event_page)
             section_resp = api_get(
                 f"/books/{book['id']}/sections/by_page", params={"page": page_for_section}
             )
@@ -379,8 +383,7 @@ if selected_label != "None":
         recursive = st.session_state.get("recursive_summary", True)
 
         if st.session_state.get("show_summary") and st.session_state.get("selected_section"):
-            summary_dialog(st.session_state["selected_section"], recursive)
-            st.session_state["show_summary"] = False
+            st.session_state["summary_context_recursive"] = recursive
 
     with tabs[1]:
         st.subheader("Summaries Explorer")
@@ -394,8 +397,13 @@ if selected_label != "None":
         render_tree_explorer(tree, on_explorer_click)
 
         if st.session_state.get("show_summary") and st.session_state.get("selected_section"):
-            summary_dialog(st.session_state["selected_section"], True)
-            st.session_state["show_summary"] = False
+            st.session_state["summary_context_recursive"] = True
+
+    if st.session_state.get("show_summary") and st.session_state.get("selected_section"):
+        summary_dialog(
+            st.session_state["selected_section"],
+            st.session_state.get("summary_context_recursive", True),
+        )
 else:
     with tabs[0]:
         st.info("Upload a PDF and select a book to begin.")

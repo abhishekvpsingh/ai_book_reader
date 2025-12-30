@@ -471,7 +471,10 @@ def set_summary_click(book_id: int, payload: dict):
 
 @router.get("/books/{book_id}/summary_click")
 def get_summary_click(book_id: int):
-    return _summary_clicks.get(book_id, {})
+    data = _summary_clicks.pop(book_id, None)
+    if not data:
+        return {}
+    return data
 
 
 @router.get("/books/{book_id}/progress", response_model=ProgressOut)
