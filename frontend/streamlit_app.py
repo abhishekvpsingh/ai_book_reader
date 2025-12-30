@@ -31,8 +31,14 @@ st.markdown(
     [data-testid="stDialog"] > div { width: 78vw; max-width: 1100px; }
     [data-testid="stDialog"] button[aria-label="Close"],
     [data-testid="stDialog"] button[title="Close"],
-    [data-testid="stDialog"] [data-testid="dialogCloseButton"] {
-        display: none;
+    [data-testid="stDialog"] [data-testid="dialogCloseButton"],
+    [data-testid="stDialog"] [data-testid="stDialogCloseButton"],
+    [data-testid="stDialog"] [data-testid="DialogCloseButton"],
+    [data-testid="stDialog"] [aria-label="Close dialog"],
+    [data-testid="stDialog"] [data-testid="stDialogHeader"] button,
+    [data-testid="stDialog"] header button {
+        display: none !important;
+        visibility: hidden !important;
     }
     .summary-box {
         border: 1px solid var(--border);

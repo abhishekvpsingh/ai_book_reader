@@ -102,7 +102,7 @@ def get_book_viewer(book_id: int, request: Request, page: int = 1, db: Session =
         #toolbar input {{ width:56px; background:#202531; color:#e5e7eb; border:1px solid #2a323d; border-radius:6px; padding:4px 6px; }}
         #page-wrap {{ position:relative; margin:16px auto; width:fit-content; }}
         #pdf-canvas {{ display:block; background:#fff; box-shadow:0 0 0 1px #2a323d; }}
-        #highlight-layer {{ position:absolute; left:0; top:0; z-index:2; pointer-events:none; }}
+        #highlight-layer {{ position:absolute; left:0; top:0; z-index:4; pointer-events:none; }}
         #highlight-layer .hl {{ position:absolute; background:rgba(255, 213, 79, 0.35); border-radius:4px; pointer-events:auto; }}
         #text-layer {{ position:absolute; left:0; top:0; z-index:3; color:transparent; user-select:text; pointer-events:auto; }}
         #text-layer span {{ color:transparent; position:absolute; transform-origin:0% 0%; white-space:pre; cursor:pointer; }}
@@ -220,7 +220,9 @@ def get_book_viewer(book_id: int, request: Request, page: int = 1, db: Session =
               div.style.width = (rect.w * canvas.width) + "px";
               div.style.height = (rect.h * canvas.height) + "px";
               div.title = note.question;
-              div.onclick = () => {{
+              div.onclick = (event) => {{
+                event.stopPropagation();
+                event.preventDefault();
                 qaQuestion.value = note.question;
                 qaAnswer.textContent = note.answer;
                 qaStatus.textContent = "Saved note";
@@ -231,6 +233,12 @@ def get_book_viewer(book_id: int, request: Request, page: int = 1, db: Session =
             }});
           }});
         }}
+
+        highlightLayer.addEventListener('click', function(event) {{
+          if (event.target && event.target.classList && event.target.classList.contains('hl')) {{
+            event.stopPropagation();
+          }}
+        }});
 
         function loadNotes(page) {{
           fetch(apiBase + "/books/" + bookId + "/notes?page=" + page)
