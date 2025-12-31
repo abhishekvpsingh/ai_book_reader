@@ -6,6 +6,7 @@ from app.models.summary import Summary
 from app.models.summary_version import SummaryVersion
 from app.models.audio_asset import AudioAsset
 from app.models.reading_progress import ReadingProgress
+from app.models.note import Note
 
 __all__ = [
     "Base",
@@ -16,4 +17,5 @@ __all__ = [
     "SummaryVersion",
     "AudioAsset",
     "ReadingProgress",
+    "Note",
 ]

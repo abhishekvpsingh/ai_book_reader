@@ -13,3 +13,7 @@ class BookOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class BookUpdate(BaseModel):
+    title: str

@@ -9,6 +9,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY streamlit_app.py /app/streamlit_app.py
+COPY components /app/components
 
 EXPOSE 8501
 
