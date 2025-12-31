@@ -38,7 +38,13 @@ def get_audio(version_id: int, db: Session = Depends(get_db)):
     if not audio or not os.path.exists(audio.file_path):
         raise HTTPException(status_code=404, detail="Audio not found")
     media_type = "audio/mpeg" if audio.format == "mp3" else "audio/wav"
-    return FileResponse(audio.file_path, media_type=media_type, filename=os.path.basename(audio.file_path))
+    filename = os.path.basename(audio.file_path)
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Disposition": f'inline; filename="{filename}"',
+        "Access-Control-Allow-Origin": "*",
+    }
+    return FileResponse(audio.file_path, media_type=media_type, filename=filename, headers=headers)
 
 
 @router.delete("/summary_versions/{version_id}")

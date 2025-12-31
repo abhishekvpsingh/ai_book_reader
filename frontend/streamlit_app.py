@@ -4,6 +4,7 @@ import base64
 import requests
 import streamlit as st
 from streamlit.components.v1 import html as components_html
+from streamlit_autorefresh import st_autorefresh
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 PUBLIC_BACKEND_URL = os.getenv("PUBLIC_BACKEND_URL", "http://localhost:8000")
@@ -28,6 +29,17 @@ st.markdown(
     [data-testid="stTabs"] { position: relative; z-index: 2; margin-top: 0.6rem; }
     [data-testid="stTabs"] button { font-size: 1.02rem; padding: 0.45rem 1rem; }
     [data-testid="stDialog"] > div { width: 78vw; max-width: 1100px; }
+    [data-testid="stDialog"] button[aria-label="Close"],
+    [data-testid="stDialog"] button[title="Close"],
+    [data-testid="stDialog"] [data-testid="dialogCloseButton"],
+    [data-testid="stDialog"] [data-testid="stDialogCloseButton"],
+    [data-testid="stDialog"] [data-testid="DialogCloseButton"],
+    [data-testid="stDialog"] [aria-label="Close dialog"],
+    [data-testid="stDialog"] [data-testid="stDialogHeader"] button,
+    [data-testid="stDialog"] header button {
+        display: none !important;
+        visibility: hidden !important;
+    }
     .summary-box {
         border: 1px solid var(--border);
         padding: 14px;
@@ -120,44 +132,37 @@ def api_delete(path):
         return None
 
 
-def fetch_audio(version_id: int):
-    try:
-        resp = requests.get(f"{BACKEND_URL}/summary_versions/{version_id}/audio", timeout=30)
-        if resp.status_code != 200:
-            return None, None
-        content_type = resp.headers.get("Content-Type", "audio/mpeg")
-        return resp.content, content_type
-    except requests.RequestException:
-        return None, None
-
-
-def render_audio_player(audio_bytes: bytes, content_type: str) -> None:
-    b64 = base64.b64encode(audio_bytes).decode("ascii")
+def render_audio_player(audio_url: str) -> None:
     html = f"""
     <div class="audio-shell">
       <button onclick="var a=document.getElementById('tts-audio'); a.currentTime=Math.max(0,a.currentTime-10);">-10s</button>
       <button onclick="var a=document.getElementById('tts-audio'); a.currentTime=Math.min(a.duration,a.currentTime+10);">+10s</button>
       <label style="color:#98a2b3;">Speed</label>
       <select onchange="document.getElementById('tts-audio').playbackRate=parseFloat(this.value);" style="background:#161a1f;color:#f2f4f8;border:1px solid #2a323d;border-radius:6px;padding:4px 6px;">
+        <option value="0.75">0.75x</option>
         <option value="0.9">0.9x</option>
         <option value="1" selected>1.0x</option>
         <option value="1.1">1.1x</option>
         <option value="1.25">1.25x</option>
+        <option value="1.5">1.5x</option>
       </select>
       <audio id="tts-audio" controls style="width:100%;">
-        <source src="data:{content_type};base64,{b64}">
+        <source src="{audio_url}" type="audio/mpeg">
       </audio>
     </div>
     """
-    components_html(html, height=80)
+    components_html(html, height=120)
 
 
 def render_pdf_viewer(book_id: int, page: int) -> None:
-    viewer_url = f"{PUBLIC_BACKEND_URL}/books/{book_id}/viewer?page={page}"
+    viewer_rev = "v2-qa-1"
+    viewer_url = f"{PUBLIC_BACKEND_URL}/books/{book_id}/viewer?page={page}&v={viewer_rev}"
     st.markdown(
         f"<iframe src='{viewer_url}' class='pdf-frame' style='width:100%;min-width:100%;'></iframe>",
         unsafe_allow_html=True,
     )
+
+
 
 
 def poll_job(job_id, timeout=60):
@@ -205,6 +210,10 @@ def summary_dialog(section, recursive):
             f"<div class='summary-header'><div><strong>Summary</strong><div class='summary-meta'>Pages {section['page_start']} - {section['page_end']}</div></div></div>",
             unsafe_allow_html=True,
         )
+        if st.button("Close", key=f"close_summary_{section['id']}"):
+            st.session_state["show_summary"] = False
+            st.session_state["selected_section"] = None
+            st.rerun()
         versions_response = api_get(f"/sections/{section['id']}/summary_versions")
         if not versions_response:
             st.error("Backend unavailable.")
@@ -231,9 +240,15 @@ def summary_dialog(section, recursive):
             if not res:
                 st.error("Backend unavailable.")
                 return
-            job_id = res.json().get("job_id")
+            st.session_state["regen_in_progress"] = True
+            st.session_state["regen_job_id"] = res.json().get("job_id")
+            st.rerun()
+
+        if st.session_state.get("regen_in_progress") and st.session_state.get("regen_job_id"):
             with st.spinner("Generating summary..."):
-                result = poll_job(job_id, timeout=120)
+                result = poll_job(st.session_state["regen_job_id"], timeout=120)
+            st.session_state["regen_in_progress"] = False
+            st.session_state["regen_job_id"] = None
             if result.get("result"):
                 if isinstance(result["result"], dict):
                     st.session_state["overview_only"] = result["result"].get("overview")
@@ -253,19 +268,34 @@ def summary_dialog(section, recursive):
             labels = [f"v{v['version_number']}" for v in versions]
             selected_version_id = version_ids[0] if version_ids else None
             st.session_state[state_key] = selected_version_id
+        audio_urls = st.session_state.get("audio_urls", {})
+
         if cols[2].button("Listen") and selected_version_id:
-            res = api_post(f"/summary_versions/{selected_version_id}/tts")
-            if not res:
-                st.error("Backend unavailable.")
-                return
-            job_id = res.json().get("job_id")
-            with st.spinner("Generating audio..."):
-                poll_job(job_id, timeout=120)
-            audio_bytes, content_type = fetch_audio(selected_version_id)
-            if not audio_bytes:
-                st.error("Audio not available. Check TTS settings.")
-                return
-            render_audio_player(audio_bytes, content_type)
+            if st.session_state.get("tts_in_progress"):
+                st.info("Audio generation in progress...")
+            else:
+                st.session_state["tts_in_progress"] = True
+                res = api_post(f"/summary_versions/{selected_version_id}/tts")
+                if not res:
+                    st.error("Backend unavailable.")
+                    st.session_state["tts_in_progress"] = False
+                    return
+                job_id = res.json().get("job_id")
+                st.session_state["last_tts_job_id"] = job_id
+                with st.spinner("Generating audio..."):
+                    result = poll_job(job_id, timeout=120)
+                if result.get("status") == "finished":
+                    audio_url = (
+                        f"{PUBLIC_BACKEND_URL}/summary_versions/{selected_version_id}/audio"
+                        f"?ts={int(time.time())}"
+                    )
+                    audio_urls[str(selected_version_id)] = audio_url
+                    st.session_state["audio_urls"] = audio_urls
+                st.session_state["tts_in_progress"] = False
+
+        audio_url = audio_urls.get(str(selected_version_id)) if selected_version_id else None
+        if audio_url:
+            render_audio_player(audio_url)
 
         content = None
         if st.session_state.get("overview_only"):
@@ -333,42 +363,82 @@ if books_response and books_response.status_code == 200:
     st.session_state["books_cache"] = books_response.json()
 books = st.session_state["books_cache"]
 book_options = {f"{b['id']} - {b['title']}": b for b in books}
-selected_label = st.sidebar.selectbox("Select Book", ["None"] + list(book_options.keys()))
+selected_label = st.sidebar.selectbox(
+    "Select Book",
+    ["None"] + list(book_options.keys()),
+    key="selected_book_label",
+)
+st.sidebar.checkbox("Recursive summary", value=st.session_state.get("recursive_summary", True), key="recursive_summary")
 
 tabs = st.tabs(["Reader", "Summaries Explorer"])
 
 if selected_label != "None":
     book = book_options[selected_label]
+    if st.session_state.get("rename_book_id") != book["id"]:
+        st.session_state["rename_book_id"] = book["id"]
+        st.session_state["rename_title"] = book["title"]
+        st.session_state["confirm_delete_book"] = False
+
+    with st.sidebar.expander("Manage book"):
+        new_title = st.text_input("Rename book", key="rename_title")
+        if st.button("Save title"):
+            res = api_put(f"/books/{book['id']}", json={"title": new_title})
+            if res and res.status_code == 200:
+                st.success("Book renamed.")
+                st.session_state["books_cache"] = []
+                st.rerun()
+            else:
+                st.error("Rename failed.")
+
+        st.checkbox("Confirm delete", key="confirm_delete_book")
+        if st.button("Delete book"):
+            if not st.session_state.get("confirm_delete_book"):
+                st.warning("Confirm delete first.")
+            else:
+                res = api_delete(f"/books/{book['id']}")
+                if res and res.status_code == 200:
+                    st.success("Book deleted.")
+                    st.session_state["books_cache"] = []
+                    st.session_state["selected_book_label"] = "None"
+                    st.session_state["current_book_id"] = None
+                    st.session_state["selected_section"] = None
+                    st.session_state["show_summary"] = False
+                    st.session_state["page"] = 1
+                    st.rerun()
+                else:
+                    st.error("Delete failed.")
+    if not st.session_state.get("show_summary") and not st.session_state.get("tts_in_progress"):
+        st_autorefresh(interval=1000, key="summary_autorefresh", debounce=True)
     progress = api_get(f"/books/{book['id']}/progress")
     last_page = progress.json().get("last_page", 1) if progress and progress.status_code == 200 else 1
     if st.session_state.get("current_book_id") != book["id"]:
         st.session_state["current_book_id"] = book["id"]
         st.session_state["page"] = int(last_page)
 
-    with tabs[0]:
-        left, right = st.columns([1, 4])
-        with left:
-            st.subheader("Sections")
-            tree_response = api_get(f"/books/{book['id']}/sections")
-            tree = tree_response.json() if tree_response else []
-            recursive = st.checkbox("Recursive summary", value=True)
-
-            def on_section_click(node):
-                st.session_state["selected_section"] = node
+    click_event = api_get(f"/books/{book['id']}/summary_click")
+    if click_event and click_event.status_code == 200:
+        click_data = click_event.json()
+        event_page = click_data.get("page")
+        if event_page:
+            page_for_section = int(event_page)
+            section_resp = api_get(
+                f"/books/{book['id']}/sections/by_page", params={"page": page_for_section}
+            )
+            if section_resp and section_resp.status_code == 200:
+                st.session_state["page"] = page_for_section
+                st.session_state["selected_section"] = section_resp.json()
                 st.session_state["show_summary"] = True
-                st.session_state["page"] = int(node["page_start"])
 
-            render_tree(tree, on_section_click)
+    with tabs[0]:
+        st.subheader("PDF Viewer")
+        page = st.session_state.get("page", 1)
+        api_put(f"/books/{book['id']}/progress", json={"last_page": int(page), "last_section_id": None})
+        render_pdf_viewer(int(book["id"]), int(page))
 
-        with right:
-            st.subheader("PDF Viewer")
-            page = st.session_state.get("page", 1)
-            api_put(f"/books/{book['id']}/progress", json={"last_page": int(page), "last_section_id": None})
-            render_pdf_viewer(int(book["id"]), int(page))
+        recursive = st.session_state.get("recursive_summary", True)
 
         if st.session_state.get("show_summary") and st.session_state.get("selected_section"):
-            summary_dialog(st.session_state["selected_section"], recursive)
-            st.session_state["show_summary"] = False
+            st.session_state["summary_context_recursive"] = recursive
 
     with tabs[1]:
         st.subheader("Summaries Explorer")
@@ -382,8 +452,13 @@ if selected_label != "None":
         render_tree_explorer(tree, on_explorer_click)
 
         if st.session_state.get("show_summary") and st.session_state.get("selected_section"):
-            summary_dialog(st.session_state["selected_section"], True)
-            st.session_state["show_summary"] = False
+            st.session_state["summary_context_recursive"] = True
+
+    if st.session_state.get("show_summary") and st.session_state.get("selected_section"):
+        summary_dialog(
+            st.session_state["selected_section"],
+            st.session_state.get("summary_context_recursive", True),
+        )
 else:
     with tabs[0]:
         st.info("Upload a PDF and select a book to begin.")
