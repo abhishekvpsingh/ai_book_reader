@@ -1,3 +1,4 @@
 /.envdata/
 data/
 .env
+.DS_Store

@@ -18,6 +18,22 @@ A production‑ready, self‑hosted book reader for PDF textbooks that preserves
    - Select text, ask a question, and optionally save a note to highlight the text.
 4) Summaries are versioned and displayed with figures and TTS.
 
+## Screenshots
+Reader landing view and upload panel.
+
+![Reader landing](docs/screenshots/Screenshot%202025-12-30%20at%206.36.03%20PM.png)
+
+PDF viewer with outline navigation and zoom.
+
+![PDF viewer](docs/screenshots/Screenshot%202025-12-30%20at%206.36.28%20PM.png)
+
+Summary dialog with versions, figures, and audio controls.
+
+![Summary dialog](docs/screenshots/Screenshot%202025-12-30%20at%206.36.41%20PM.png)
+
+Ask about selection with saved note highlight.
+
+![Ask about selection](docs/screenshots/Screenshot%202025-12-30%20at%206.37.00%20PM.png)
 ## Quick Start (Mac)
 1) Copy env template:
 ```bash
